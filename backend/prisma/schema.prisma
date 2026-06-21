@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MonitorType {
+  HTTP
+  HTTPS
+  TCP
+  PING
+}
+
+enum MonitorMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+}
+
+enum MonitorStatus {
+  UP
+  DOWN
+  DEGRADED
+  PAUSED
+}
+
+enum CheckStatus {
+  SUCCESS
+  FAILED
+  TIMEOUT
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+model User {
+  id             String            @id @default(cuid())
+  name           String?
+  email          String            @unique
+  passwordHash   String
+  role           UserRole          @default(MEMBER)
+  emailVerified  Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  memberships    WorkspaceMember[]
+  ownedWorkspaces Workspace[]      @relation("WorkspaceOwner")
+  notifications  Notification[]
+  subscriptions  Subscription[]
+}
+
+model Workspace {
+  id              String            @id @default(cuid())
+  name            String
+  slug            String            @unique
+  description     String?
+  timezone        String            @default("UTC")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  ownerId         String
+  owner           User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+
+  members         WorkspaceMember[]
+  monitors        Monitor[]
+  alertRules      AlertRule[]
+  notifications   Notification[]
+  subscriptions   Subscription[]
+}
+
+model WorkspaceMember {
+  id           String         @id @default(cuid())
+  workspaceId  String
+  userId       String
+  role         WorkspaceRole  @default(MEMBER)
+  createdAt    DateTime       @default(now())
+
+  workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Monitor {
+  id                String         @id @default(cuid())
+  workspaceId       String
+  name              String
+  url               String
+  type              MonitorType     @default(HTTP)
+  method            MonitorMethod   @default(GET)
+  intervalSeconds   Int            @default(60)
+  timeoutMs         Int            @default(5000)
+  expectedStatus    String?        
+  headers           Json?
+  requestBody       Json?
+  isActive          Boolean        @default(true)
+  status            MonitorStatus   @default(PAUSED)
+  lastCheckedAt     DateTime?
+  lastStatus        CheckStatus?
+  lastLatencyMs     Int?
+  consecutiveFails  Int            @default(0)
+  uptimePercent     Float          @default(100)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  checks            MonitorCheck[]
+  incidents         Incident[]
+  alertRules        AlertRule[]
+
+  @@index([workspaceId])
+  @@index([isActive, status])
+}
+
+model MonitorCheck {
+  id             String      @id @default(cuid())
+  monitorId      String
+  checkedAt      DateTime    @default(now())
+  status         CheckStatus
+  latencyMs      Int?
+  httpStatusCode Int?
+  responseTimeMs Int?
+  errorMessage   String?
+  region         String?
+  responseMeta   Json?
+
+  monitor        Monitor     @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, checkedAt])
+  @@index([status, checkedAt])
+}
+
+model Incident {
+  id            String         @id @default(cuid())
+  monitorId     String
+  status        IncidentStatus @default(OPEN)
+  title         String
+  reason        String?
+  startedAt     DateTime       @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt    DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  monitor       Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, status])
+  @@index([status, startedAt])
+}
+
+model AlertRule {
+  id              String      @id @default(cuid())
+  workspaceId     String
+  monitorId       String?
+  name            String
+  isEnabled       Boolean     @default(true)
+  thresholdCount  Int         @default(3)
+  thresholdWindow Int         @default(5)
+  notifyEmail     Boolean     @default(true)
+  notifySocket    Boolean     @default(true)
+  notifyWebhook   Boolean     @default(false)
+  webhookUrl      String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  monitor         Monitor?    @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([monitorId])
+}
+
+model Notification {
+  id           String      @id @default(cuid())
+  userId       String
+  workspaceId  String?
+  title        String
+  message      String
+  channel      String
+  isRead       Boolean     @default(false)
+  sentAt       DateTime    @default(now())
+  readAt       DateTime?
+
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  workspaceId          String
+  userId               String?
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  status               SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user                 User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+  @@index([userId])
+}
