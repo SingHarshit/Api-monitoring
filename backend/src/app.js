@@ -1,9 +1,13 @@
-require('dotenv/config')
+const path = require('path')
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') })
 
 const http = require('http')
 const express = require('express')
 const cors = require('cors')
 const { initializeSocket } = require('./socket/statusGateway')
+const authRoutes = require('./routes/auth.routes')
+const monitorRoutes = require('./routes/monitor.auth')
+const workspace = require('./routes/workspace.routes')
 
 const app = express()
 const server = http.createServer(app)
@@ -31,5 +35,9 @@ const PORT = process.env.PORT || 5000
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
+
+app.use('/api/auth', authRoutes)
+app.use('/api/monitors', monitorRoutes)
+app.use('/api/workspaces', workspace)
 
 module.exports = { app, server }
