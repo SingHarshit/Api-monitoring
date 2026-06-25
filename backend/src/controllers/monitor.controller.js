@@ -206,10 +206,44 @@ async function deleteMonitor(req, res, next) {
   }
 }
 
+async function toggleMonitorActive(req, res, next) {
+  try {
+    const { id } = req.params
+
+    const existingMonitor = await prisma.monitor.findUnique({
+      where: { id },
+      select: { id: true, isActive: true },
+    })
+
+    if (!existingMonitor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Monitor not found',
+      })
+    }
+
+    const monitor = await prisma.monitor.update({
+      where: { id },
+      data: {
+        isActive: !existingMonitor.isActive,
+      },
+    })
+
+    return res.status(200).json({
+      success: true,
+      message: `Monitor ${monitor.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: monitor,
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 module.exports = {
   createMonitor,
   getMonitors,
   getMonitorById,
   updateMonitor,
   deleteMonitor,
+  toggleMonitorActive,
 }

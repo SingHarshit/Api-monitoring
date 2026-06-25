@@ -6,6 +6,7 @@ const {
   getMonitorById,
   updateMonitor,
   deleteMonitor,
+  toggleMonitorActive,
 } = require('../controllers/monitor.controller')
 const {
   createMonitorSchema,
@@ -50,5 +51,7 @@ router.put(
   updateMonitor
 )
 router.delete('/:id', validate(monitorIdParamsSchema, 'params'), deleteMonitor)
+router.post('/:id/active', validate(monitorIdParamsSchema, 'params'), toggleMonitorActive)
+router.patch('/:id/toggle', validate(monitorIdParamsSchema, 'params'), toggleMonitorActive)
 
 module.exports = router
