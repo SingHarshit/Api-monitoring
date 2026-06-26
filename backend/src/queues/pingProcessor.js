@@ -22,6 +22,11 @@ const worker = new Worker(
       const latencyMs = Date.now() - startedAt
       const isUp = response.status >= 200 && response.status < 400
 
+      const headersJson =
+        typeof response.headers?.toJSON === 'function'
+          ? response.headers.toJSON()
+          : { ...(response.headers || {}) }
+
       await prisma.monitorCheck.create({
         data: {
           monitorId,
@@ -30,7 +35,7 @@ const worker = new Worker(
           httpStatusCode: response.status,
           responseTimeMs: latencyMs,
           responseMeta: {
-            headers: response.headers,
+            headers: headersJson,
           },
         },
       })
@@ -54,26 +59,29 @@ const worker = new Worker(
       }
     } catch (error) {
       const latencyMs = Date.now() - startedAt
+      const isNetworkError = Boolean(error?.isAxiosError)
 
-      await prisma.monitorCheck.create({
-        data: {
-          monitorId,
-          status: 'TIMEOUT',
-          latencyMs,
-          errorMessage: error.message,
-        },
-      })
+      if (isNetworkError) {
+        await prisma.monitorCheck.create({
+          data: {
+            monitorId,
+            status: 'TIMEOUT',
+            latencyMs,
+            errorMessage: error.message,
+          },
+        })
 
-      await prisma.monitor.update({
-        where: { id: monitorId },
-        data: {
-          lastCheckedAt: new Date(),
-          lastStatus: 'TIMEOUT',
-          lastLatencyMs: latencyMs,
-          consecutiveFails: { increment: 1 },
-          status: 'DOWN',
-        },
-      })
+        await prisma.monitor.update({
+          where: { id: monitorId },
+          data: {
+            lastCheckedAt: new Date(),
+            lastStatus: 'TIMEOUT',
+            lastLatencyMs: latencyMs,
+            consecutiveFails: { increment: 1 },
+            status: 'DOWN',
+          },
+        })
+      }
 
       throw error
     }
@@ -90,6 +98,7 @@ worker.on('completed', (job) => {
 
 worker.on('failed', (job, error) => {
   console.error(`Job ${job?.id} failed:`, error.message)
+  console.error(error.stack)
 })
 
 module.exports = worker

@@ -1,7 +1,17 @@
 const pingQueue = require('./pingQueue')
 const prisma = require('../config/prisma')
 
-async function startPingScheduler() {
+async function clearPingRepeatJobs() {
+  const repeatJobs = await pingQueue.getRepeatableJobs()
+
+  for (const job of repeatJobs) {
+    await pingQueue.removeRepeatableByKey(job.key)
+  }
+
+  return repeatJobs.length
+}
+
+async function scheduleActiveMonitors() {
   const monitors = await prisma.monitor.findMany({
     where: { isActive: true },
     select: {
@@ -31,7 +41,25 @@ async function startPingScheduler() {
     )
   }
 
-  console.log(`Scheduled ${monitors.length} monitors`)
+  return monitors.length
 }
 
-module.exports = startPingScheduler
+async function startPingScheduler(options = {}) {
+  const { cleanExisting = false } = options
+
+  if (cleanExisting) {
+    const removed = await clearPingRepeatJobs()
+    console.log(`Removed ${removed} stale repeat jobs`)
+  }
+
+  const scheduled = await scheduleActiveMonitors()
+  console.log(`Scheduled ${scheduled} monitors`)
+
+  return { scheduled }
+}
+
+module.exports = {
+  startPingScheduler,
+  clearPingRepeatJobs,
+  scheduleActiveMonitors,
+}
