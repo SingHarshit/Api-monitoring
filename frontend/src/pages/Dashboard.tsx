@@ -6,6 +6,8 @@ import {
   toggleMonitor,
   updateMonitor,
 } from '../api/monitorApi'
+import { initializeSocket } from '../sockets/socket'
+import { useAllMonitorsSocket, type MonitorStatusUpdate } from '../hooks/useMonitorSocket'
 import CreateMonitorModal from '../components/CreateMonitorModal'
 import EditMonitorModal from '../components/EditMonitorModal'
 import MonitorCard from '../components/MonitorCard'
@@ -85,12 +87,53 @@ function buildDemoMonitor(data: MonitorFormValues, index: number): Monitor {
   }
 }
 
+function formatTime(isoString: string | null): string {
+  if (!isoString) return 'Never'
+  const date = new Date(isoString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSecs = Math.floor(diffMs / 1000)
+
+  if (diffSecs < 60) return `${diffSecs}s ago`
+  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}m ago`
+  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}h ago`
+  return date.toLocaleDateString()
+}
+
 export default function Dashboard() {
   const [monitors, setMonitors] = useState<Monitor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [editingMonitor, setEditingMonitor] = useState<Monitor | null>(null)
+  const [isSocketConnected, setIsSocketConnected] = useState(false)
+
+  // Initialize socket connection on mount
+  useEffect(() => {
+    const socket = initializeSocket()
+    
+    const handleConnect = () => {
+      console.log('Dashboard: Socket connected')
+      setIsSocketConnected(true)
+    }
+
+    const handleDisconnect = () => {
+      console.log('Dashboard: Socket disconnected')
+      setIsSocketConnected(false)
+    }
+
+    socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
+
+    if (socket.connected) {
+      setIsSocketConnected(true)
+    }
+
+    return () => {
+      socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
+    }
+  }, [])
 
   const loadMonitors = async () => {
     setLoading(true)
@@ -112,14 +155,42 @@ export default function Dashboard() {
     loadMonitors()
   }, [])
 
+  // Get workspaceId from first monitor or localStorage
+  const workspaceId = useMemo(() => {
+    return monitors[0]?.workspaceId || localStorage.getItem('workspaceId') || 'demo-workspace'
+  }, [monitors])
+
+  // Handle real-time socket updates
+  const handleMonitorStatusUpdate = (update: MonitorStatusUpdate) => {
+    setMonitors((prev) =>
+      prev.map((monitor) =>
+        monitor.id === update.monitorId
+          ? {
+              ...monitor,
+              status: update.status === 'UP' ? 'UP' : 'DOWN',
+              lastCheckedAt: update.lastCheckedAt,
+              lastStatus: update.lastStatus,
+              lastLatencyMs: update.lastLatencyMs,
+              consecutiveFails: update.consecutiveFails,
+              uptimePercent: update.uptimePercent,
+            }
+          : monitor,
+      ),
+    )
+  }
+
+  // Subscribe to workspace socket updates
+  useAllMonitorsSocket(workspaceId, handleMonitorStatusUpdate)
+
   const stats = useMemo(() => {
     const activeCount = monitors.filter((monitor) => monitor.isActive).length
     const inactiveCount = monitors.length - activeCount
+    const upCount = monitors.filter((monitor) => monitor.status === 'UP').length
     const averageUptime = monitors.length
       ? Math.round(monitors.reduce((sum, monitor) => sum + (monitor.uptimePercent ?? 0), 0) / monitors.length)
       : 0
 
-    return { activeCount, inactiveCount, averageUptime }
+    return { activeCount, inactiveCount, upCount, averageUptime }
   }, [monitors])
 
   const handleCreate = async (data: MonitorFormValues) => {
@@ -192,10 +263,10 @@ export default function Dashboard() {
     <main className="app-shell">
       <section className="hero panel">
         <div>
-          <p className="eyebrow">Phase 2 Endpoint Dashboard</p>
-          <h1>Monitor every endpoint from one place.</h1>
+          <p className="eyebrow">Phase 5 Real-Time Dashboard {isSocketConnected && <span style={{ color: '#10b981' }}>● Live</span>}</p>
+          <h1>Monitor every endpoint in real-time.</h1>
           <p className="hero__copy">
-            Create monitors, edit them inline, toggle active state, and keep the dashboard usable even when the API is offline.
+            Live status updates without page refresh. Watch response times, uptime, and check history update instantly as your endpoints are monitored.
           </p>
         </div>
 
@@ -211,19 +282,19 @@ export default function Dashboard() {
 
       <section className="stat-grid">
         <article className="stat panel">
-          <span className="stat__label">Monitors</span>
+          <span className="stat__label">Total Monitors</span>
           <strong className="stat__value">{monitors.length}</strong>
+        </article>
+        <article className="stat panel">
+          <span className="stat__label">Status Up</span>
+          <strong className="stat__value" style={{ color: '#10b981' }}>{stats.upCount}</strong>
         </article>
         <article className="stat panel">
           <span className="stat__label">Active</span>
           <strong className="stat__value">{stats.activeCount}</strong>
         </article>
         <article className="stat panel">
-          <span className="stat__label">Inactive</span>
-          <strong className="stat__value">{stats.inactiveCount}</strong>
-        </article>
-        <article className="stat panel">
-          <span className="stat__label">Average uptime</span>
+          <span className="stat__label">Average Uptime</span>
           <strong className="stat__value">{stats.averageUptime}%</strong>
         </article>
       </section>
@@ -233,8 +304,8 @@ export default function Dashboard() {
       <section className="panel surface">
         <div className="surface__header">
           <div>
-            <p className="eyebrow">Endpoint list</p>
-            <h2>Manage monitors</h2>
+            <p className="eyebrow">Live Endpoint Status</p>
+            <h2>Real-time monitoring</h2>
           </div>
           <span className="surface__count">{loading ? 'Loading...' : `${monitors.length} items`}</span>
         </div>
@@ -246,13 +317,43 @@ export default function Dashboard() {
         ) : (
           <div className="monitor-grid">
             {monitors.map((monitor) => (
-              <MonitorCard
-                key={monitor.id}
-                monitor={monitor}
-                onDelete={handleDelete}
-                onToggle={handleToggle}
-                onEdit={setEditingMonitor}
-              />
+              <div key={monitor.id} className="monitor-card-wrapper">
+                <MonitorCard
+                  monitor={monitor}
+                  onDelete={handleDelete}
+                  onToggle={handleToggle}
+                  onEdit={setEditingMonitor}
+                />
+                
+                {/* Live metrics overlay */}
+                <div className="monitor-metrics">
+                  <div className="metrics-row">
+                    <div className="metric">
+                      <span className="metric__label">Status</span>
+                      <span className={`metric__value status-${monitor.status.toLowerCase()}`}>
+                        <span className={`status-dot status-${monitor.status.toLowerCase()}`}></span>
+                        {monitor.status}
+                      </span>
+                    </div>
+                    <div className="metric">
+                      <span className="metric__label">Response Time</span>
+                      <span className="metric__value">
+                        {monitor.lastLatencyMs ? `${monitor.lastLatencyMs}ms` : '-'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="metrics-row">
+                    <div className="metric">
+                      <span className="metric__label">Last Check</span>
+                      <span className="metric__value">{formatTime(monitor.lastCheckedAt)}</span>
+                    </div>
+                    <div className="metric">
+                      <span className="metric__label">Uptime</span>
+                      <span className="metric__value">{monitor.uptimePercent?.toFixed(2)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         )}
