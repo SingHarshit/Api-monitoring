@@ -1,3 +1,11 @@
+:root {
+  --text: #64748b;
+  --text-h: #1e293b;
+  --accent: #0f766e;
+  --border: rgba(148, 163, 184, 0.2);
+  --shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
+}
+
 .app-shell {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
@@ -669,5 +677,71 @@
 
   .monitor-card__actions {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Analytics Grid and Chart Cards */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.chart-card {
+  border-radius: 22px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(229, 228, 231, 0.9);
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card__header {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.chart-card__header h3 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.chart-card__header p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.chart-card__body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat__hint {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+/* Responsive adjustments for analytics */
+@media (max-width: 900px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero__actions {
+    flex-direction: column;
+    justify-content: stretch;
+  }
+
+  .hero__actions select,
+  .hero__actions button {
+    width: 100%;
   }
 }

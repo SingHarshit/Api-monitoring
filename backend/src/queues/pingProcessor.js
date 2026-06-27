@@ -1,8 +1,8 @@
 const { Worker } = require('bullmq')
 const axios = require('axios')
 const redis = require('../config/redis')
-const pingQueue = require('../queues/pingQueue')
 const prisma = require('../config/prisma')
+const { emitMonitorStatus, emitWorkspaceStatus } = require('../socket/statusGateway')
 
 const worker = new Worker(
   'ping-queue',
@@ -27,7 +27,7 @@ const worker = new Worker(
           ? response.headers.toJSON()
           : { ...(response.headers || {}) }
 
-      await prisma.monitorCheck.create({
+      const check = await prisma.monitorCheck.create({
         data: {
           monitorId,
           status: isUp ? 'SUCCESS' : 'FAILED',
@@ -40,7 +40,7 @@ const worker = new Worker(
         },
       })
 
-      await prisma.monitor.update({
+      const monitor = await prisma.monitor.update({
         where: { id: monitorId },
         data: {
           lastCheckedAt: new Date(),
@@ -49,7 +49,33 @@ const worker = new Worker(
           consecutiveFails: isUp ? 0 : { increment: 1 },
           status: isUp ? 'UP' : 'DOWN',
         },
+        select: {
+          id: true,
+          workspaceId: true,
+          status: true,
+          lastCheckedAt: true,
+          lastStatus: true,
+          lastLatencyMs: true,
+          consecutiveFails: true,
+          uptimePercent: true,
+          name: true,
+        },
       })
+
+      const payload = {
+        monitorId: monitor.id,
+        workspaceId: monitor.workspaceId,
+        status: monitor.status,
+        lastCheckedAt: monitor.lastCheckedAt,
+        lastStatus: monitor.lastStatus,
+        lastLatencyMs: monitor.lastLatencyMs,
+        consecutiveFails: monitor.consecutiveFails,
+        uptimePercent: monitor.uptimePercent,
+        checkId: check.id,
+      }
+
+      emitMonitorStatus(monitor.id, payload)
+      emitWorkspaceStatus(monitor.workspaceId, payload)
 
       return {
         monitorId,
@@ -62,16 +88,7 @@ const worker = new Worker(
       const isNetworkError = Boolean(error?.isAxiosError)
 
       if (isNetworkError) {
-        await prisma.monitorCheck.create({
-          data: {
-            monitorId,
-            status: 'TIMEOUT',
-            latencyMs,
-            errorMessage: error.message,
-          },
-        })
-
-        await prisma.monitor.update({
+        const monitor = await prisma.monitor.update({
           where: { id: monitorId },
           data: {
             lastCheckedAt: new Date(),
@@ -80,7 +97,41 @@ const worker = new Worker(
             consecutiveFails: { increment: 1 },
             status: 'DOWN',
           },
+          select: {
+            id: true,
+            workspaceId: true,
+            status: true,
+            lastCheckedAt: true,
+            lastStatus: true,
+            lastLatencyMs: true,
+            consecutiveFails: true,
+            uptimePercent: true,
+          },
         })
+
+        const check = await prisma.monitorCheck.create({
+          data: {
+            monitorId,
+            status: 'TIMEOUT',
+            latencyMs,
+            errorMessage: error.message,
+          },
+        })
+
+        const payload = {
+          monitorId: monitor.id,
+          workspaceId: monitor.workspaceId,
+          status: monitor.status,
+          lastCheckedAt: monitor.lastCheckedAt,
+          lastStatus: monitor.lastStatus,
+          lastLatencyMs: monitor.lastLatencyMs,
+          consecutiveFails: monitor.consecutiveFails,
+          uptimePercent: monitor.uptimePercent,
+          checkId: check.id,
+        }
+
+        emitMonitorStatus(monitor.id, payload)
+        emitWorkspaceStatus(monitor.workspaceId, payload)
       }
 
       throw error

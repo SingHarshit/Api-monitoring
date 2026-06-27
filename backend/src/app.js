@@ -10,6 +10,7 @@ const pingWorker = require('./queues/pingProcessor')
 const authRoutes = require('./routes/auth.routes')
 const monitorRoutes = require('./routes/monitor.auth')
 const workspace = require('./routes/workspace.routes')
+const analyticsRoutes = require('./routes/analytics.routes')
 
 const app = express()
 const server = http.createServer(app)
@@ -29,7 +30,7 @@ app.get('/health', (req, res) => {
     message: 'API Monitoring server is running',
   })
 })
-
+app.use('/api/analytics', analyticsRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/monitors', monitorRoutes)
 app.use('/api/workspaces', workspace)
