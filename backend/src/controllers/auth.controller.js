@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs')
 const prisma = require('../config/prisma')
 const generateToken = require('../utils/generateToken')
+const { recordAuthAttempt } = require('../services/alertService')
 
 const SALT_ROUNDS = 10
 
@@ -61,14 +62,30 @@ async function register(req, res, next) {
 }
 
 async function login(req, res, next) {
-  try {
-    const { email, password } = req.body
+  const startedAt = Date.now()
+  const email = req.body.email.trim().toLowerCase()
+  const userAgent = req.get('user-agent')
 
+  try {
     const user = await prisma.user.findUnique({
-      where: { email: email.trim().toLowerCase() },
+      where: { email },
     })
 
     if (!user) {
+      const latencyMs = Date.now() - startedAt
+
+      void recordAuthAttempt({
+        email,
+        statusCode: 401,
+        latencyMs,
+        reason: 'Invalid credentials',
+        path: req.originalUrl,
+        ip: req.ip,
+        userAgent,
+      }).catch((error) => {
+        console.error('Auth alert failed:', error.message)
+      })
+
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -78,6 +95,20 @@ async function login(req, res, next) {
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
 
     if (!isPasswordValid) {
+      const latencyMs = Date.now() - startedAt
+
+      void recordAuthAttempt({
+        email,
+        statusCode: 401,
+        latencyMs,
+        reason: 'Invalid credentials',
+        path: req.originalUrl,
+        ip: req.ip,
+        userAgent,
+      }).catch((error) => {
+        console.error('Auth alert failed:', error.message)
+      })
+
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -90,6 +121,20 @@ async function login(req, res, next) {
       role: user.role,
     })
 
+    const latencyMs = Date.now() - startedAt
+
+    void recordAuthAttempt({
+      email,
+      statusCode: 200,
+      latencyMs,
+      reason: 'Login successful',
+      path: req.originalUrl,
+      ip: req.ip,
+      userAgent,
+    }).catch((error) => {
+      console.error('Auth alert failed:', error.message)
+    })
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -99,6 +144,20 @@ async function login(req, res, next) {
       },
     })
   } catch (error) {
+    const latencyMs = Date.now() - startedAt
+
+    void recordAuthAttempt({
+      email,
+      statusCode: 500,
+      latencyMs,
+      reason: error.message,
+      path: req.originalUrl,
+      ip: req.ip,
+      userAgent,
+    }).catch((alertError) => {
+      console.error('Auth alert failed:', alertError.message)
+    })
+
     next(error)
   }
 }
