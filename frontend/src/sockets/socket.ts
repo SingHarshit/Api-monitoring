@@ -8,7 +8,7 @@ export function initializeSocket(): Socket {
   }
 
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000'
-  const socketUrl = apiBaseUrl.replace('/api', '') // Remove /api suffix if present
+  const socketUrl = apiBaseUrl.replace('/api', '')
 
   socket = io(socketUrl, {
     auth: {

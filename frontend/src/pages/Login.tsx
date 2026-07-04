@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import axiosClient from '../api/axiosClient'
+import { useNavigate } from 'react-router-dom'
 
 type LoginProps = {
   onSuccess: () => void
@@ -10,6 +11,7 @@ export default function Login({ onSuccess }: LoginProps) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const navigate = useNavigate()
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -27,6 +29,7 @@ export default function Login({ onSuccess }: LoginProps) {
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(user))
       onSuccess()
+      navigate('/')
     } catch (requestError: any) {
       setError(
         requestError?.response?.data?.message ??

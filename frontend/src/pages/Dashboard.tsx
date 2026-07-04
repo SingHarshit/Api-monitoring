@@ -107,6 +107,7 @@ export default function Dashboard() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editingMonitor, setEditingMonitor] = useState<Monitor | null>(null)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
+  const [now, setNow] = useState<number>(() => Date.now())
 
   // Initialize socket connection on mount
   useEffect(() => {

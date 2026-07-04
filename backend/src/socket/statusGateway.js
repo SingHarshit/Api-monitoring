@@ -49,7 +49,20 @@ function emitMonitorStatus(monitorId, payload) {
 
 function emitWorkspaceStatus(workspaceId, payload) {
   if (!io) return
-  io.to(`workspace:${workspaceId}`).emit('workspace-status', payload)
+
+  let monitors = []
+
+  if (!payload) {
+    monitors = []
+  } else if (Array.isArray(payload)) {
+    monitors = payload
+  } else if (payload.monitors && Array.isArray(payload.monitors)) {
+    monitors = payload.monitors
+  } else {
+    monitors = [payload]
+  }
+
+  io.to(`workspace:${workspaceId}`).emit('workspace-status', { monitors })
 }
 
 module.exports = {

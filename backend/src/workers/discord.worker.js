@@ -1,4 +1,3 @@
-// backend/src/workers/discord.worker.js
 const axios = require('axios')
 
 async function sendDiscordAlert(message) {

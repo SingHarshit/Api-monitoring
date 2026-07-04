@@ -63,8 +63,13 @@ async function register(req, res, next) {
 
 async function login(req, res, next) {
   const startedAt = Date.now()
-  const email = req.body.email.trim().toLowerCase()
+  const email = (req.body.email || '').trim().toLowerCase()
+  const { password } = req.body
   const userAgent = req.get('user-agent')
+
+  if (!email || !password) {
+    return res.status(400).json({ success: false, message: 'Email and password are required' })
+  }
 
   try {
     const user = await prisma.user.findUnique({

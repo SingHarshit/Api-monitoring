@@ -1,4 +1,4 @@
-// backend/src/workers/slack.worker.js
+
 const axios = require('axios')
 
 async function sendSlackAlert(message) {

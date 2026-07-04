@@ -11,6 +11,10 @@ const authRoutes = require('./routes/auth.routes')
 const monitorRoutes = require('./routes/monitor.auth')
 const workspace = require('./routes/workspace.routes')
 const analyticsRoutes = require('./routes/analytics.routes')
+const rateLimiter = require('./middleware/rateLimiter')
+const prisma = require('./config/prisma')
+const redisClient = require('./config/redis')
+const { dlqWorker, queueEvents, deadLetterQueue } = require('./workers/deadLetterWorker')
 
 const app = express()
 const server = http.createServer(app)
@@ -23,20 +27,61 @@ app.use(
 )
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
-
+app.use(rateLimiter({ windowMs: 60 * 1000, max: 100 }))
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'API Monitoring server is running',
   })
 })
+app.get('/api/health', async (req, res) => {
+  const result = {
+    status: 'healthy',
+    database: 'unknown',
+    redis: 'unknown',
+    worker: 'unknown',
+    timestamp: new Date().toISOString(),
+  }
+  try {
+    await prisma.$queryRaw('SELECT 1')
+    result.database = 'up'
+  } catch (err) {
+    result.database = 'down'
+    result.status = 'unhealthy'
+  }
+
+  try {
+    const pong = await redisClient.ping()
+    result.redis = pong === 'PONG' ? 'up' : 'down'
+    if (result.redis === 'down') result.status = 'unhealthy'
+  } catch (err) {
+    result.redis = 'down'
+    result.status = 'unhealthy'
+  }
+  try {
+    if (pingWorker && typeof pingWorker.close === 'function') {
+      result.worker = 'up'
+    } else {
+      result.worker = 'down'
+      result.status = 'unhealthy'
+    }
+  } catch (err) {
+    result.worker = 'down'
+    result.status = 'unhealthy'
+  }
+
+  const statusCode = result.status === 'healthy' ? 200 : 503
+  return res.status(statusCode).json(result)
+})
+
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/monitors', monitorRoutes)
 app.use('/api/workspaces', workspace)
+let io 
 
 async function bootstrap() {
-  initializeSocket(server)
+  io = initializeSocket(server)
 
   const cleanExisting = process.env.CLEAN_REPEAT_JOBS_ON_BOOT === 'true'
   await startPingScheduler({ cleanExisting })
@@ -55,13 +100,50 @@ bootstrap().catch((error) => {
 async function shutdown(signal) {
   console.log(`${signal} received, shutting down...`)
 
-  try {
-    await pingWorker.close()
-  } catch (error) {
-    console.error('Failed to close ping worker:', error.message)
+  async function safeClose(name, fn) {
+    try {
+      await fn()
+      console.log(`${name} closed`)
+    } catch (err) {
+      console.error(`Failed to close ${name}:`, err?.message || err)
+    }
   }
-
-  server.close(() => process.exit(0))
+  if (pingWorker && typeof pingWorker.close === 'function') {
+    await safeClose('pingWorker', () => pingWorker.close())
+  }
+  if (dlqWorker && typeof dlqWorker.close === 'function') {
+    await safeClose('dlqWorker', () => dlqWorker.close())
+  }
+  if (queueEvents && typeof queueEvents.close === 'function') {
+    await safeClose('queueEvents', () => queueEvents.close())
+  }
+  if (deadLetterQueue && typeof deadLetterQueue.close === 'function') {
+    await safeClose('deadLetterQueue', () => deadLetterQueue.close())
+  }
+  if (redisClient && typeof redisClient.quit === 'function') {
+    await safeClose('redis', () => redisClient.quit())
+  } else if (redisClient && typeof redisClient.disconnect === 'function') {
+    await safeClose('redis', () => redisClient.disconnect())
+  }
+  if (prisma && typeof prisma.$disconnect === 'function') {
+    await safeClose('prisma', () => prisma.$disconnect())
+  }
+  try {
+    if (io && typeof io.close === 'function') {
+      await new Promise((resolve, reject) => io.close((err) => (err ? reject(err) : resolve())))
+      console.log('socket.io closed')
+    }
+  } catch (err) {
+    console.error('Failed to close socket.io:', err?.message || err)
+  }
+  server.close(() => {
+    console.log('HTTP server closed')
+    process.exit(0)
+  })
+  setTimeout(() => {
+    console.warn('Forcing shutdown after timeout')
+    process.exit(1)
+  }, 30_000)
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'))
