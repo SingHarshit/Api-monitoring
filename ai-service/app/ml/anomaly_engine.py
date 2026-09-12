@@ -21,6 +21,10 @@ class AnomalyEngine:
     HIGH_THRESHOLD = 0.80
     CRITICAL_THRESHOLD = 0.90
     BASELINE_CHECK_COUNT = 20
+    WINDOW_SIZE = 10
+    BASELINE_WINDOW_COUNT = 5
+    STATISTICAL_WEIGHT = 0.70
+    ISOLATION_WEIGHT = 0.30
 
     def __init__(self, min_history: int = MIN_HISTORY) -> None:
         if min_history < 2:
@@ -123,34 +127,53 @@ class AnomalyEngine:
         self,
         checks: Sequence[MonitorCheckData],
     ) -> dict[str, Any]:
-        if len(checks) < 2:
+        windows = self._build_windows(checks)
+
+        if len(windows) < 2:
             return {
                 "isAnomaly": False,
                 "score": 0.0,
                 "current": 0.0,
                 "baseline": 0.0,
+                "historicalWindowCount": len(windows),
             }
 
-        historical = checks[-(self.BASELINE_CHECK_COUNT + 1):-1]
-        current_error = float(self._is_error(checks[-1]))
-        baseline_rate = sum(self._is_error(check) for check in historical) / len(historical)
-        score = 0.0
+        current_window = windows[-1]
+        historical_windows = windows[
+            -(BASELINE_WINDOW_COUNT + 1):-1
+        ]
 
-        if current_error:
-            score = 1.0 if baseline_rate == 0 else min((1.0 / baseline_rate) / 10.0, 1.0)
+        historical_rates = [
+            self._window_error_rate(window)
+            for window in historical_windows
+        ]
+
+        baseline_rate = self.calculate_median(
+            historical_rates
+        )
+        current_rate = self._window_error_rate(
+            current_window
+        )
+        score = self._rate_anomaly_score(
+            current_rate,
+            baseline_rate,
+        )
 
         return {
-            "isAnomaly": score >= 0.60,
-            "score": round(score, 4),
-            "current": current_error,
+            "isAnomaly": score >= self.ANOMALY_THRESHOLD,
+            "score": score,
+            "current": round(current_rate, 4),
             "baseline": round(baseline_rate, 4),
+            "historicalWindowCount": len(historical_windows),
         }
 
     def analyze_timeout(
         self,
         checks: Sequence[MonitorCheckData],
     ) -> dict[str, Any]:
-        if len(checks) < 2:
+        windows = self._build_windows(checks)
+
+        if len(windows) < 2:
             return {
                 "isAnomaly": False,
                 "score": 0.0,
@@ -158,19 +181,33 @@ class AnomalyEngine:
                 "baseline": 0.0,
             }
 
-        historical = checks[-(self.BASELINE_CHECK_COUNT + 1):-1]
-        current_timeout = float(self._is_timeout(checks[-1]))
-        baseline_rate = sum(self._is_timeout(check) for check in historical) / len(historical)
-        score = 0.0
+        current_window = windows[-1]
+        historical_windows = windows[
+            -(BASELINE_WINDOW_COUNT + 1):-1
+        ]
 
-        if current_timeout:
-            score = 1.0 if baseline_rate == 0 else min((1.0 / baseline_rate) / 10.0, 1.0)
+        historical_rates = [
+            self._window_timeout_rate(window)
+            for window in historical_windows
+        ]
+
+        baseline_rate = self.calculate_median(
+            historical_rates
+        )
+        current_rate = self._window_timeout_rate(
+            current_window
+        )
+        score = self._rate_anomaly_score(
+            current_rate,
+            baseline_rate,
+        )
 
         return {
-            "isAnomaly": score >= 0.60,
-            "score": round(score, 4),
-            "current": current_timeout,
+            "isAnomaly": score >= self.ANOMALY_THRESHOLD,
+            "score": score,
+            "current": round(current_rate, 4),
             "baseline": round(baseline_rate, 4),
+            "historicalWindowCount": len(historical_windows),
         }
 
     def calculate_composite_score(
@@ -219,19 +256,44 @@ class AnomalyEngine:
         ):
             return None
 
-        current_features = build_features(current_payload)
+        ordered_checks = sorted(
+            current_payload.checks,
+            key=lambda check: check.checked_at,
+        )
+
+        current_window_payload = current_payload.model_copy(
+            update={
+                "checks": ordered_checks[-WINDOW_SIZE:],
+            },
+        )
+
+        current_features = build_features(
+            current_window_payload
+        )
+
         model = IsolationForestModel(
             feature_names=IsolationForestModel.DEFAULT_FEATURES,
             min_training_observations=self.MIN_ISOLATION_HISTORY,
         )
+
         result = model.fit_predict(
-            [self._isolation_features(row) for row in historical_features],
+            [
+                self._isolation_features(row)
+                for row in historical_features
+            ],
             self._isolation_features(current_features),
+        )
+
+        # IsolationForest decision_function is positive for normal
+        # observations and negative for anomalous observations.
+        ml_score = min(
+            max(0.5 - result.decision_score, 0.0),
+            1.0,
         )
 
         return {
             "isAnomaly": result.is_anomaly,
-            "anomalyScore": result.anomaly_score,
+            "anomalyScore": round(ml_score, 4),
             "decisionScore": result.decision_score,
             "trainingObservations": result.training_observations,
         }
@@ -274,10 +336,28 @@ class AnomalyEngine:
             error_result["score"],
             timeout_result["score"],
         )
-        effective_score = max(composite_score, strongest_rule_score)
-        is_anomaly = effective_score >= self.ANOMALY_THRESHOLD or bool(
-            isolation_result and isolation_result["isAnomaly"]
+        statistical_score = max(
+            composite_score,
+            strongest_rule_score,
         )
+        isolation_score = (
+            isolation_result["anomalyScore"]
+            if isolation_result
+            else None
+        )
+
+        if isolation_score is None:
+            final_score = statistical_score
+        else:
+            final_score = round(
+                (
+                    STATISTICAL_WEIGHT * statistical_score
+                    + ISOLATION_WEIGHT * isolation_score
+                ),
+                4,
+            )
+
+        is_anomaly = final_score >= self.ANOMALY_THRESHOLD
 
         signals = []
         for signal_type, result, message in (
@@ -303,9 +383,15 @@ class AnomalyEngine:
 
         return {
             "isAnomaly": is_anomaly,
-            "score": effective_score,
+            "score": final_score,
             "compositeScore": composite_score,
-            "severity": self.determine_severity(effective_score) if is_anomaly else "NORMAL",
+            "statisticalScore": statistical_score,
+            "isolationScore": isolation_score,
+            "severity": (
+                self.determine_severity(final_score)
+                if is_anomaly
+                else "NORMAL"
+            ),
             "sampleCount": sample_count,
             "baseline": {
                 "latency": latency_result["baseline"],
@@ -320,3 +406,74 @@ class AnomalyEngine:
             "signals": signals,
             "isolationForest": isolation_result,
         }
+
+    @staticmethod
+    def _build_windows(
+        checks: Sequence[MonitorCheckData],
+    ) -> list[list[MonitorCheckData]]:
+        ordered_checks = sorted(
+            checks,
+            key=lambda check: check.checked_at,
+        )
+
+        return [
+            ordered_checks[start:start + WINDOW_SIZE]
+            for start in range(
+                0,
+                len(ordered_checks) - WINDOW_SIZE + 1,
+                5,
+            )
+        ]
+
+
+@classmethod
+def _window_error_rate(
+    cls,
+    checks: Sequence[MonitorCheckData],
+) -> float:
+    if not checks:
+        return 0.0
+
+    error_count = sum(
+        cls._is_error(check)
+        for check in checks
+    )
+
+    return error_count / len(checks)
+
+
+@classmethod
+def _window_timeout_rate(
+    cls,
+    checks: Sequence[MonitorCheckData],
+) -> float:
+    if not checks:
+        return 0.0
+
+    timeout_count = sum(
+        cls._is_timeout(check)
+        for check in checks
+    )
+
+    return timeout_count / len(checks)
+
+
+@staticmethod
+def _rate_anomaly_score(
+    current_rate: float,
+    baseline_rate: float,
+) -> float:
+    if current_rate <= baseline_rate:
+        return 0.0
+
+    if baseline_rate == 0:
+        return 1.0 if current_rate > 0 else 0.0
+
+    relative_increase = (
+        current_rate - baseline_rate
+    ) / baseline_rate
+
+    return round(
+        min(max(relative_increase, 0.0), 1.0),
+        4,
+    )

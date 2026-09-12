@@ -50,7 +50,6 @@ class AnomalyService:
             WINDOW_STEP,
         ):
             end_index = start_index + WINDOW_SIZE
-
             window_checks = checks[start_index:end_index]
 
             historical_payload = payload.model_copy(
