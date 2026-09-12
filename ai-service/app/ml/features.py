@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import sin, cos, pi
-from statistics import mean, median
+from statistics import mean, median, pstdev
 from typing import Any, Sequence
 
 from app.models.anomaly import MonitorCheckData, MonitoringPayload
@@ -115,6 +115,14 @@ def build_features(payload: MonitoringPayload) -> dict[str, Any]:
     latency_deviation_ratio = None
     if latest_latency is not None and baseline_median and baseline_median > 0:
         latency_deviation_ratio = latest_latency / baseline_median
+
+    timeout_rate = _safe_ratio(timeout_checks, total_checks)
+
+    latency_std_ms = (
+        pstdev(latency_values)
+        if len(latency_values) > 1
+        else 0.0
+    )
 
     features: dict[str, Any] = {
         "monitor_id": payload.monitor_id,

@@ -20,6 +20,7 @@ class AnomalyEngine:
     ANOMALY_THRESHOLD = 0.60
     HIGH_THRESHOLD = 0.80
     CRITICAL_THRESHOLD = 0.90
+    BASELINE_CHECK_COUNT = 20
 
     def __init__(self, min_history: int = MIN_HISTORY) -> None:
         if min_history < 2:

@@ -7,6 +7,9 @@ from app.ml.anomaly_engine import AnomalyEngine
 from app.models.anomaly import AnomalyAnalysisRequest, MonitoringPayload
 
 
+WINDOW_SIZE = 10
+WINDOW_STEP = 5
+
 class AnomalyService:
     """
     Thin service layer for anomaly analysis.
@@ -39,12 +42,21 @@ class AnomalyService:
 
         historical_features = []
 
-        for end_index in range(2, len(checks)):
+        for start_index in range(
+            0,
+            len(checks) - WINDOW_SIZE,
+            WINDOW_STEP,
+        ):
+            end_index = start_index + WINDOW_SIZE
+
+            window_checks = checks[start_index:end_index]
+
             historical_payload = payload.model_copy(
-                update={"checks": checks[:end_index]},
+                update={"checks": window_checks},
             )
+
             historical_features.append(
-                build_features(historical_payload),
+                build_features(historical_payload)
             )
 
         return historical_features
@@ -76,3 +88,4 @@ class AnomalyService:
 
 
 anomaly_service = AnomalyService()
+
