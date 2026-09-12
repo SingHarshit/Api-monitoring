@@ -137,6 +137,7 @@ def build_features(payload: MonitoringPayload) -> dict[str, Any]:
         "failure_count": failure_count,
         "success_rate": _safe_ratio(successful_checks, total_checks),
         "error_rate": _safe_ratio(failure_count, total_checks),
+        "timeout_rate": timeout_rate,
         "latency_sample_count": len(latency_values),
         "latency_mean_ms": (
             mean(latency_values)
@@ -151,6 +152,7 @@ def build_features(payload: MonitoringPayload) -> dict[str, Any]:
         "latency_min_ms": min(latency_values) if latency_values else None,
         "latency_max_ms": max(latency_values) if latency_values else None,
         "latency_p95_ms": _percentile(latency_values, 0.95),
+        "latency_std_ms": latency_std_ms,
         "baseline_latency_median_ms": baseline_median,
         "latest_latency_ms": latest_latency,
         "latest_status": (

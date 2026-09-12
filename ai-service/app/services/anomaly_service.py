@@ -37,14 +37,16 @@ class AnomalyService:
             key=lambda check: check.checked_at,
         )
 
-        if len(checks) <= minimum_observations:
+        current_start = max(0, len(checks) - WINDOW_SIZE)
+
+        if current_start < WINDOW_SIZE:
             return []
 
         historical_features = []
 
         for start_index in range(
             0,
-            len(checks) - WINDOW_SIZE,
+            current_start - WINDOW_SIZE + 1,
             WINDOW_STEP,
         ):
             end_index = start_index + WINDOW_SIZE

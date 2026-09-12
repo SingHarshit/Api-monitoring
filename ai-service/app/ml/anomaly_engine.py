@@ -71,7 +71,10 @@ class AnomalyEngine:
             }
 
         current = float(latency_checks[-1].latency_ms)
-        history = [float(check.latency_ms) for check in latency_checks[:-1]]
+        history = [
+            float(check.latency_ms)
+            for check in latency_checks[-(self.BASELINE_CHECK_COUNT + 1):-1]
+        ]
 
         if not history:
             return {
@@ -128,7 +131,7 @@ class AnomalyEngine:
                 "baseline": 0.0,
             }
 
-        historical = checks[:-1]
+        historical = checks[-(self.BASELINE_CHECK_COUNT + 1):-1]
         current_error = float(self._is_error(checks[-1]))
         baseline_rate = sum(self._is_error(check) for check in historical) / len(historical)
         score = 0.0
@@ -155,7 +158,7 @@ class AnomalyEngine:
                 "baseline": 0.0,
             }
 
-        historical = checks[:-1]
+        historical = checks[-(self.BASELINE_CHECK_COUNT + 1):-1]
         current_timeout = float(self._is_timeout(checks[-1]))
         baseline_rate = sum(self._is_timeout(check) for check in historical) / len(historical)
         score = 0.0
@@ -201,8 +204,8 @@ class AnomalyEngine:
             "latency_median_ms": features.get("latency_median_ms"),
             "latency_p95_ms": features.get("latency_p95_ms"),
             "error_rate": features.get("error_rate"),
-            "latest_latency_ms": features.get("latest_latency_ms"),
-            "latency_deviation_ratio": features.get("latency_deviation_ratio"),
+            "timeout_rate": features.get("timeout_rate"),
+            "latency_std_ms": features.get("latency_std_ms"),
         }
 
     def _run_isolation_forest(
@@ -217,9 +220,8 @@ class AnomalyEngine:
             return None
 
         current_features = build_features(current_payload)
-        feature_names = tuple(self._isolation_features(current_features))
         model = IsolationForestModel(
-            feature_names=feature_names,
+            feature_names=IsolationForestModel.DEFAULT_FEATURES,
             min_training_observations=self.MIN_ISOLATION_HISTORY,
         )
         result = model.fit_predict(
