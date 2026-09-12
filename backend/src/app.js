@@ -15,7 +15,7 @@ const rateLimiter = require('./middleware/rateLimiter')
 const prisma = require('./config/prisma')
 const redisClient = require('./config/redis')
 const { dlqWorker, queueEvents, deadLetterQueue } = require('./workers/deadLetterWorker')
-
+const aiWorker = require('./queues/aiProcessor')
 const app = express()
 const server = http.createServer(app)
 
@@ -127,6 +127,9 @@ async function shutdown(signal) {
   }
   if (prisma && typeof prisma.$disconnect === 'function') {
     await safeClose('prisma', () => prisma.$disconnect())
+  }
+  if (aiWorker && typeof aiWorker.close === 'function') {
+    await safeClose('aiWorker', () => aiWorker.close())
   }
   try {
     if (io && typeof io.close === 'function') {

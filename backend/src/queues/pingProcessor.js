@@ -2,6 +2,7 @@ const { Worker } = require('bullmq')
 const axios = require('axios')
 const redis = require('../config/redis')
 const prisma = require('../config/prisma')
+const aiQueue = require('./aiQueue')
 const { emitMonitorStatus, emitWorkspaceStatus } = require('../socket/statusGateway')
 
 const worker = new Worker(
@@ -77,6 +78,8 @@ const worker = new Worker(
       emitMonitorStatus(monitor.id, payload)
       emitWorkspaceStatus(monitor.workspaceId, payload)
 
+      await enqueueAiAnalysis(monitorId, check.id)
+
       return {
         monitorId,
         status: isUp ? 'UP' : 'DOWN',
@@ -132,6 +135,8 @@ const worker = new Worker(
 
         emitMonitorStatus(monitor.id, payload)
         emitWorkspaceStatus(monitor.workspaceId, payload)
+
+        await enqueueAiAnalysis(monitorId, check.id)
       }
 
       throw error
@@ -153,3 +158,102 @@ worker.on('failed', (job, error) => {
 })
 
 module.exports = worker
+
+const AI_ANALYSIS_WINDOW_HOURS = Number(
+  process.env.AI_ANALYSIS_WINDOW_HOURS || 24
+)
+
+async function enqueueAiAnalysis(monitorId, checkId) {
+  const windowStart = new Date(
+    Date.now() - AI_ANALYSIS_WINDOW_HOURS * 60 * 60 * 1000
+  )
+
+  const [monitor, checks, incidents] = await Promise.all([
+    prisma.monitor.findUnique({
+      where: { id: monitorId },
+      select: {
+        id: true,
+        name: true,
+        url: true,
+        method: true,
+        timeoutMs: true,
+      },
+    }),
+
+    prisma.monitorCheck.findMany({
+      where: {
+        monitorId,
+        checkedAt: {
+          gte: windowStart,
+        },
+      },
+      orderBy: {
+        checkedAt: 'asc',
+      },
+      take: 500,
+      select: {
+        id: true,
+        checkedAt: true,
+        status: true,
+        latencyMs: true,
+        httpStatusCode: true,
+        responseTimeMs: true,
+        errorMessage: true,
+        region: true,
+      },
+    }),
+
+    prisma.incident.findMany({
+      where: {
+        monitorId,
+        startedAt: {
+          gte: windowStart,
+        },
+      },
+      orderBy: {
+        startedAt: 'asc',
+      },
+      select: {
+        id: true,
+        status: true,
+        title: true,
+        reason: true,
+        startedAt: true,
+        resolvedAt: true,
+      },
+    }),
+  ])
+
+  if (!monitor) {
+    throw new Error(`Monitor ${monitorId} not found`)
+  }
+
+  await aiQueue.add(
+    'analyze-monitor',
+    {
+      monitorId,
+      checkId,
+      windowHours: AI_ANALYSIS_WINDOW_HOURS,
+      triggeredAt: new Date().toISOString(),
+      payload: {
+        monitor_id: monitor.id,
+        analysis_window: {
+          from: windowStart.toISOString(),
+          to: new Date().toISOString(),
+          hours: AI_ANALYSIS_WINDOW_HOURS,
+        },
+        monitor: {
+          name: monitor.name,
+          url: monitor.url,
+          method: monitor.method,
+          timeout_ms: monitor.timeoutMs,
+        },
+        checks,
+        incidents,
+      },
+    },
+    {
+      jobId: `ai-analysis-${monitorId}-${checkId}`,
+    }
+  )
+}

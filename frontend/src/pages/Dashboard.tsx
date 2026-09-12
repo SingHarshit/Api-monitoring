@@ -346,7 +346,7 @@ export default function Dashboard() {
                   <div className="metrics-row">
                     <div className="metric">
                       <span className="metric__label">Last Check</span>
-                      <span className="metric__value">{formatTime(monitor.lastCheckedAt)}</span>
+                      <span className="metric__value">{formatTime(monitor.lastCheckedAt ?? null)}</span>
                     </div>
                     <div className="metric">
                       <span className="metric__label">Uptime</span>
