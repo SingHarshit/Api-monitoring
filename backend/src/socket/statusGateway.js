@@ -65,9 +65,23 @@ function emitWorkspaceStatus(workspaceId, payload) {
   io.to(`workspace:${workspaceId}`).emit('workspace-status', { monitors })
 }
 
+function emitMonitorIncident(monitorId, payload) {
+  if (!io) return
+
+  io.to(`monitor:${monitorId}`).emit('monitor-incident', payload)
+}
+
+function emitWorkspaceIncident(workspaceId, payload) {
+  if (!io) return
+
+  io.to(`workspace:${workspaceId}`).emit('workspace-incident', payload)
+}
+
 module.exports = {
   initializeSocket,
   getIO,
   emitMonitorStatus,
   emitWorkspaceStatus,
+  emitMonitorIncident,
+  emitWorkspaceIncident,
 }

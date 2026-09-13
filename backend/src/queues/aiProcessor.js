@@ -1,6 +1,10 @@
 const { Worker } = require('bullmq')
 const redis = require('../config/redis')
 const { analyzeMonitor } = require('../services/aiService')
+const {
+  aggregateAnomalyResult,
+  enqueueIncidentLifecycle,
+} = require('../services/incidentAggregator')
 
 const worker = new Worker(
   'ai-analysis-queue',
@@ -33,10 +37,24 @@ const worker = new Worker(
       }
     )
 
+    const aggregation = await aggregateAnomalyResult({
+      monitorId,
+      checkId,
+      triggeredAt,
+      result,
+    })
+
+    await enqueueIncidentLifecycle({
+      monitorId,
+      checkId,
+      analysisIsAnomaly: result?.analysis?.isAnomaly === true,
+    })
+
     return {
       monitorId,
       checkId,
       result,
+      aggregation,
     }
   },
   {

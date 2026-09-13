@@ -63,6 +63,20 @@ enum SubscriptionStatus {
   UNPAID
 }
 
+enum AnomalyType {
+  LATENCY
+  ERROR_RATE
+  TIMEOUT
+  ISOLATION_FOREST
+}
+
+enum AnomalySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
 model User {
   id             String            @id @default(cuid())
   name           String?
@@ -117,15 +131,15 @@ model Monitor {
   workspaceId       String
   name              String
   url               String
-  type              MonitorType     @default(HTTP)
-  method            MonitorMethod   @default(GET)
+  type              MonitorType    @default(HTTP)
+  method            MonitorMethod  @default(GET)
   intervalSeconds   Int            @default(60)
   timeoutMs         Int            @default(5000)
-  expectedStatus    String?        
+  expectedStatus    String?
   headers           Json?
   requestBody       Json?
   isActive          Boolean        @default(true)
-  status            MonitorStatus   @default(PAUSED)
+  status            MonitorStatus  @default(PAUSED)
   lastCheckedAt     DateTime?
   lastStatus        CheckStatus?
   lastLatencyMs     Int?
@@ -137,6 +151,7 @@ model Monitor {
   workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   checks            MonitorCheck[]
   incidents         Incident[]
+  anomalyEvents     AnomalyEvent[]
   alertRules        AlertRule[]
 
   @@index([workspaceId])
@@ -144,9 +159,9 @@ model Monitor {
 }
 
 model MonitorCheck {
-  id             String      @id @default(cuid())
+  id             String         @id @default(cuid())
   monitorId      String
-  checkedAt      DateTime    @default(now())
+  checkedAt      DateTime       @default(now())
   status         CheckStatus
   latencyMs      Int?
   httpStatusCode Int?
@@ -155,28 +170,33 @@ model MonitorCheck {
   region         String?
   responseMeta   Json?
 
-  monitor        Monitor     @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  monitor        Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  anomalyEvents  AnomalyEvent[]
 
   @@index([monitorId, checkedAt])
   @@index([status, checkedAt])
 }
 
 model Incident {
-  id            String         @id @default(cuid())
-  monitorId     String
-  status        IncidentStatus @default(OPEN)
-  title         String
-  reason        String?
-  startedAt     DateTime       @default(now())
-  acknowledgedAt DateTime?
-  resolvedAt    DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id              String          @id @default(cuid())
+  monitorId       String
+  status          IncidentStatus  @default(OPEN)
+  severity        AnomalySeverity @default(LOW)
+  title           String
+  reason          String?
+  startedAt       DateTime        @default(now())
+  lastEventAt     DateTime        @default(now())
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  monitor       Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  monitor         Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  anomalyEvents   AnomalyEvent[]
 
   @@index([monitorId, status])
   @@index([status, startedAt])
+  @@index([monitorId, lastEventAt])
 }
 
 model AlertRule {
@@ -237,4 +257,26 @@ model Subscription {
 
   @@index([workspaceId, status])
   @@index([userId])
+}
+
+model AnomalyEvent {
+  id           String          @id @default(cuid())
+  incidentId   String
+  monitorId    String
+  checkId      String?
+  type         AnomalyType
+  severity     AnomalySeverity
+  score        Float
+  detectedAt   DateTime        @default(now())
+  details      Json?
+  createdAt    DateTime        @default(now())
+
+  incident     Incident        @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  monitor      Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  check        MonitorCheck?   @relation(fields: [checkId], references: [id], onDelete: SetNull)
+
+  @@unique([checkId, type])
+  @@index([incidentId, detectedAt])
+  @@index([monitorId, detectedAt])
+  @@index([type, detectedAt])
 }

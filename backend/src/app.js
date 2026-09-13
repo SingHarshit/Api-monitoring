@@ -16,6 +16,7 @@ const prisma = require('./config/prisma')
 const redisClient = require('./config/redis')
 const { dlqWorker, queueEvents, deadLetterQueue } = require('./workers/deadLetterWorker')
 const aiWorker = require('./queues/aiProcessor')
+const incidentWorker = require('./workers/incidentWorker')
 const app = express()
 const server = http.createServer(app)
 
@@ -77,8 +78,13 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/monitors', monitorRoutes)
+app.use('/api/monitors', incidentRoutes)
 app.use('/api/workspaces', workspace)
 let io 
+
+const incidentRoutes = require('./routes/incident.routes')
+
+app.use('/api/incidents', incidentRoutes)
 
 async function bootstrap() {
   io = initializeSocket(server)
@@ -130,6 +136,9 @@ async function shutdown(signal) {
   }
   if (aiWorker && typeof aiWorker.close === 'function') {
     await safeClose('aiWorker', () => aiWorker.close())
+  }
+  if (incidentWorker && typeof incidentWorker.close === 'function') {
+    await safeClose('incidentWorker', () => incidentWorker.close())
   }
   try {
     if (io && typeof io.close === 'function') {
