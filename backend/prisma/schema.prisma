@@ -159,7 +159,7 @@ model Monitor {
 }
 
 model MonitorCheck {
-  id             String         @id @default(cuid())
+  id             String         @default(cuid())
   monitorId      String
   checkedAt      DateTime       @default(now())
   status         CheckStatus
@@ -173,6 +173,7 @@ model MonitorCheck {
   monitor        Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
   anomalyEvents  AnomalyEvent[]
 
+  @@id([id, checkedAt])
   @@index([monitorId, checkedAt])
   @@index([status, checkedAt])
 }
@@ -270,10 +271,11 @@ model AnomalyEvent {
   detectedAt   DateTime        @default(now())
   details      Json?
   createdAt    DateTime        @default(now())
+  checkAt      DateTime?
 
   incident     Incident        @relation(fields: [incidentId], references: [id], onDelete: Cascade)
   monitor      Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
-  check        MonitorCheck?   @relation(fields: [checkId], references: [id], onDelete: SetNull)
+  check        MonitorCheck?    @relation(fields: [checkId, checkAt], references: [id, checkedAt], onDelete: SetNull)
 
   @@unique([checkId, type])
   @@index([incidentId, detectedAt])

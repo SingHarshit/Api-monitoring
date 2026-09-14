@@ -3,8 +3,11 @@ const redis = require('../config/redis')
 const { analyzeMonitor } = require('../services/aiService')
 const {
   aggregateAnomalyResult,
-  enqueueIncidentLifecycle,
 } = require('../services/incidentAggregator')
+
+const {
+  enqueueIncidentLifecycle,
+} = require('./incidentLifecycle')
 
 const worker = new Worker(
   'ai-analysis-queue',

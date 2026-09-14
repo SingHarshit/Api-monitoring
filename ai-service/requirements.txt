@@ -6,3 +6,6 @@ pandas
 scikit-learn
 scipy
 python-dotenv
+
+sentence-transformers
+psycopg[binary]

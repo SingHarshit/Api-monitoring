@@ -68,6 +68,20 @@ async function aggregateAnomalyResult({
     throw new Error('checkId is required')
   }
 
+  const check = await prisma.monitorCheck.findFirst({
+    where: {
+      id: checkId,
+      monitorId,
+    },
+    select: {
+      checkedAt: true,
+    },
+  })
+
+  if (!check) {
+    throw new Error(`Monitor check ${checkId} not found`)
+  }
+
   const detectedAt = normalizeDate(triggeredAt, 'triggeredAt')
   const signals = getAnomalySignals(result)
 
@@ -140,9 +154,14 @@ async function aggregateAnomalyResult({
           incidentId: incident.id,
           monitorId,
           checkId,
+          checkAt: check.checkedAt,
           type: signal.type,
           severity: signal.severity,
-          score: Number(signal.details?.score || result?.analysis?.score || 0),
+          score: Number(
+            signal.details?.score ||
+              result?.analysis?.score ||
+              0
+          ),
           detectedAt,
           details: signal.details || null,
         },

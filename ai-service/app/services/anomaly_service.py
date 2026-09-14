@@ -8,7 +8,7 @@ from app.models.anomaly import AnomalyAnalysisRequest, MonitoringPayload
 
 
 WINDOW_SIZE = 10
-WINDOW_STEP = 5
+WINDOW_STEP = 1
 
 class AnomalyService:
     """
@@ -24,7 +24,6 @@ class AnomalyService:
     @staticmethod
     def _build_historical_features(
         payload: MonitoringPayload,
-        minimum_observations: int,
     ) -> list[Mapping[str, Any]]:
         """
         Build training rows from earlier check windows.
@@ -70,7 +69,6 @@ class AnomalyService:
         if historical_features is None:
             historical_features = self._build_historical_features(
                 request.payload,
-                self.engine.MIN_ISOLATION_HISTORY,
             )
 
         result = self.engine.analyze(
