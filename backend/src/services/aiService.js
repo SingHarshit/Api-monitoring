@@ -62,7 +62,34 @@ async function checkFastApiHealth() {
   }
 }
 
+async function investigateRca(payload, options = {}) {
+  const {
+    signal,
+    requestId,
+  } = options
+
+  try {
+    const response = await fastApiClient.post(
+      '/v1/rca/investigate',
+      payload,
+      {
+        signal,
+        headers: requestId
+          ? {
+              'X-Request-ID': requestId,
+            }
+          : undefined,
+      }
+    )
+
+    return response.data
+  } catch (error) {
+    throw normalizeError(error)
+  }
+}
+
 module.exports = {
   analyzeMonitor,
   checkFastApiHealth,
+  investigateRca,
 }

@@ -77,6 +77,13 @@ enum AnomalySeverity {
   CRITICAL
 }
 
+enum RcaStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model User {
   id             String            @id @default(cuid())
   name           String?
@@ -171,7 +178,6 @@ model MonitorCheck {
   responseMeta   Json?
 
   monitor        Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
-  anomalyEvents  AnomalyEvent[]
 
   @@id([id, checkedAt])
   @@index([monitorId, checkedAt])
@@ -194,6 +200,7 @@ model Incident {
 
   monitor         Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
   anomalyEvents   AnomalyEvent[]
+  rcaReport       RcaReport?
 
   @@index([monitorId, status])
   @@index([status, startedAt])
@@ -275,10 +282,37 @@ model AnomalyEvent {
 
   incident     Incident        @relation(fields: [incidentId], references: [id], onDelete: Cascade)
   monitor      Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
-  check        MonitorCheck?    @relation(fields: [checkId, checkAt], references: [id, checkedAt], onDelete: SetNull)
 
   @@unique([checkId, type])
   @@index([incidentId, detectedAt])
   @@index([monitorId, detectedAt])
   @@index([type, detectedAt])
+}
+
+model RcaReport {
+  id                  String    @id @default(cuid())
+  incidentId          String    @unique
+  status              RcaStatus @default(PENDING)
+
+  rootCause           String?
+  explanation         String?
+  confidence          Float?
+
+  hypotheses          Json?
+  evidence            Json?
+  validation          Json?
+  recommendedActions  Json?
+  alternativeHypotheses Json?
+  errors              Json?
+
+  iterations          Int       @default(0)
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  incident            Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([createdAt])
 }

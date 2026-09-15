@@ -9,10 +9,8 @@ const INCIDENT_INCLUDE = {
     orderBy: {
       detectedAt: 'asc',
     },
-    include: {
-      check: true,
-    },
   },
+  rcaReport: true,
 }
 
 const VALID_STATUSES = new Set([

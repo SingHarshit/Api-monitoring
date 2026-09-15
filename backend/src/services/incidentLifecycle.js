@@ -106,9 +106,6 @@ async function resolveRecoveredIncidents({
               orderBy: {
                 detectedAt: 'asc',
               },
-              include: {
-                check: true,
-              },
             },
           },
         })

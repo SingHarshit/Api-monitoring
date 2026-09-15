@@ -17,6 +17,7 @@ const redisClient = require('./config/redis')
 const { dlqWorker, queueEvents, deadLetterQueue } = require('./workers/deadLetterWorker')
 const aiWorker = require('./queues/aiProcessor')
 const incidentWorker = require('./workers/incidentWorker')
+const rcaWorker = require('./workers/rcaWorker')
 const app = express()
 const server = http.createServer(app)
 
@@ -139,6 +140,9 @@ async function shutdown(signal) {
   }
   if (incidentWorker && typeof incidentWorker.close === 'function') {
     await safeClose('incidentWorker', () => incidentWorker.close())
+  }
+  if (rcaWorker && typeof rcaWorker.close === 'function') {
+    await safeClose('rcaWorker', () => rcaWorker.close())
   }
   try {
     if (io && typeof io.close === 'function') {

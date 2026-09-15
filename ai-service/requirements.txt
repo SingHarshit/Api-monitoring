@@ -9,3 +9,7 @@ python-dotenv
 
 sentence-transformers
 psycopg[binary]
+
+langgraph
+langchain-core
+langchain-openai

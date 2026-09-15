@@ -7,6 +7,7 @@ const {
 
 const {
   enqueueIncidentLifecycle,
+  enqueueRca,
 } = require('./incidentLifecycle')
 
 const worker = new Worker(
@@ -53,11 +54,27 @@ const worker = new Worker(
       analysisIsAnomaly: result?.analysis?.isAnomaly === true,
     })
 
+    let rcaJob = null
+
+    if (aggregation?.incident?.id) {
+      rcaJob = await enqueueRca({
+        incidentId: aggregation.incident.id,
+        monitorId,
+        checkId,
+        triggeredAt,
+        windowHours,
+        maxIterations: 3,
+        initialSignals: result?.analysis?.signals || [],
+        requestId: requestId || `rca-job-${job.id}`,
+      })
+    }
+
     return {
       monitorId,
       checkId,
       result,
       aggregation,
+      rcaJobId: rcaJob?.id || null,
     }
   },
   {
