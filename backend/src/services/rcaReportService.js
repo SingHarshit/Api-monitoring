@@ -1,7 +1,15 @@
 const prisma = require('../config/prisma')
+const {
+  emitMonitorRca,
+  emitWorkspaceRca,
+} = require('../socket/statusGateway')
 
 function getFinalRca(result) {
   return result?.finalRca || result?.final_rca || {}
+}
+
+function getField(object, camelCase, snakeCase, fallback = null) {
+  return object?.[camelCase] ?? object?.[snakeCase] ?? fallback
 }
 
 async function markRcaRunning(incidentId) {
@@ -24,50 +32,69 @@ async function markRcaRunning(incidentId) {
 async function saveRcaResult({ incidentId, result }) {
   const finalRca = getFinalRca(result)
 
-  return prisma.rcaReport.upsert({
+  const reportData = {
+    status: 'COMPLETED',
+    rootCause: getField(finalRca, 'rootCause', 'root_cause'),
+    explanation: getField(finalRca, 'explanation', 'explanation'),
+    confidence: getField(finalRca, 'confidence', 'confidence'),
+    hypotheses: result.hypotheses || [],
+    evidence: result.evidence || [],
+    validation: result.validation || null,
+    recommendedActions: getField(
+      finalRca,
+      'recommendedActions',
+      'recommended_actions',
+      [],
+    ),
+    alternativeHypotheses: getField(
+      finalRca,
+      'alternativeHypotheses',
+      'alternative_hypotheses',
+      [],
+    ),
+    errors: result.errors || [],
+    iterations: result.iterations || 0,
+    completedAt: new Date(),
+  }
+
+  const savedReport = await prisma.rcaReport.upsert({
     where: { incidentId },
     create: {
       incidentId,
-      status: 'COMPLETED',
-      rootCause: finalRca.rootCause || null,
-      explanation: finalRca.explanation || null,
-      confidence: finalRca.confidence ?? null,
-      hypotheses: result.hypotheses || [],
-      evidence: result.evidence || [],
-      validation: result.validation || null,
-      recommendedActions:
-        finalRca.recommendedActions ||
-        finalRca.recommended_actions ||
-        [],
-      alternativeHypotheses:
-        finalRca.alternativeHypotheses ||
-        finalRca.alternative_hypotheses ||
-        [],
-      errors: result.errors || [],
-      iterations: result.iterations || 0,
-      completedAt: new Date(),
+      ...reportData,
     },
-    update: {
-      status: 'COMPLETED',
-      rootCause: finalRca.rootCause || null,
-      explanation: finalRca.explanation || null,
-      confidence: finalRca.confidence ?? null,
-      hypotheses: result.hypotheses || [],
-      evidence: result.evidence || [],
-      validation: result.validation || null,
-      recommendedActions:
-        finalRca.recommendedActions ||
-        finalRca.recommended_actions ||
-        [],
-      alternativeHypotheses:
-        finalRca.alternativeHypotheses ||
-        finalRca.alternative_hypotheses ||
-        [],
-      errors: result.errors || [],
-      iterations: result.iterations || 0,
-      completedAt: new Date(),
+    update: reportData,
+  })
+
+  const incident = await prisma.incident.findUnique({
+    where: { id: incidentId },
+    include: {
+      anomalyEvents: {
+        orderBy: {
+          detectedAt: 'asc',
+        },
+      },
+      rcaReport: true,
+      monitor: {
+        select: {
+          workspaceId: true,
+        },
+      },
     },
   })
+
+  if (incident) {
+    const payload = {
+      type: 'RCA_COMPLETED',
+      incident,
+      rcaReport: savedReport,
+    }
+
+    emitMonitorRca(incident.monitorId, payload)
+    emitWorkspaceRca(incident.monitor.workspaceId, payload)
+  }
+
+  return savedReport
 }
 
 async function markRcaFailed({ incidentId, error }) {

@@ -11,7 +11,10 @@ import { useAllMonitorsSocket, type MonitorStatusUpdate } from '../hooks/useMoni
 import CreateMonitorModal from '../components/CreateMonitorModal'
 import EditMonitorModal from '../components/EditMonitorModal'
 import MonitorCard from '../components/MonitorCard'
+import RcaReportCard from '../components/RcaReportCard'
 import type { Monitor, MonitorFormValues, MonitorUpdateValues } from '../types/monitor'
+import type { Incident } from '../types/incident'
+import { getIncidents } from '../api/incidentApi'
 
 const demoMonitors: Monitor[] = [
   {
@@ -102,6 +105,7 @@ function formatTime(isoString: string | null): string {
 
 export default function Dashboard() {
   const [monitors, setMonitors] = useState<Monitor[]>([])
+  const [incidentsByMonitor, setIncidentsByMonitor] = useState<Record<string, Incident[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -155,6 +159,37 @@ export default function Dashboard() {
   useEffect(() => {
     loadMonitors()
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadIncidents = async () => {
+      const entries = await Promise.all(
+        monitors.map(async (monitor) => {
+          try {
+            return [monitor.id, await getIncidents(monitor.id)] as const
+          } catch (requestError) {
+            console.error(requestError)
+            return [monitor.id, []] as const
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setIncidentsByMonitor(Object.fromEntries(entries))
+      }
+    }
+
+    if (monitors.length > 0) {
+      loadIncidents()
+    } else {
+      setIncidentsByMonitor({})
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [monitors])
 
   // Get workspaceId from first monitor or localStorage
   const workspaceId = useMemo(() => {
@@ -354,6 +389,16 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
+
+                {incidentsByMonitor[monitor.id]?.map((incident) => (
+                  <RcaReportCard
+                    key={incident.id}
+                    monitorId={monitor.id}
+                    workspaceId={monitor.workspaceId}
+                    incidentId={incident.id}
+                    initialReport={incident.rcaReport}
+                  />
+                ))}
               </div>
             ))}
           </div>

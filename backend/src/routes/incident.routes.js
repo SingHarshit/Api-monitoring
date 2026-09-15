@@ -4,6 +4,8 @@ const {
   getIncidents,
   getIncident,
   updateIncident,
+  enqueueRca,
+  getRca,
 } = require('../controllers/incident.controller')
 const {
   incidentParamsSchema,
@@ -65,6 +67,18 @@ router.patch(
   validate(incidentDetailParamsSchema, 'params'),
   validate(updateIncidentSchema, 'body'),
   updateIncident
+)
+
+router.post(
+  '/:monitorId/incidents/:incidentId/rca',
+  validate(incidentDetailParamsSchema, 'params'),
+  enqueueRca
+)
+
+router.get(
+  '/:monitorId/incidents/:incidentId/rca',
+  validate(incidentDetailParamsSchema, 'params'),
+  getRca
 )
 
 module.exports = router

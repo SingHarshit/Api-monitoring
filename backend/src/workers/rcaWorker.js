@@ -1,5 +1,6 @@
 const { Worker } = require('bullmq')
 const redis = require('../config/redis')
+const prisma = require('../config/prisma')
 const { investigateRca } = require('../services/aiService')
 const { RCA_QUEUE_NAME } = require('../queues/rcaQueue')
 const {
@@ -7,6 +8,10 @@ const {
   saveRcaResult,
   markRcaFailed,
 } = require('../services/rcaReportService')
+const {
+  emitMonitorRca,
+  emitWorkspaceRca,
+} = require('../socket/statusGateway')
 
 const rcaWorker = new Worker(
   RCA_QUEUE_NAME,
@@ -50,6 +55,39 @@ const rcaWorker = new Worker(
         incidentId,
         result,
       })
+
+      const incident = await prisma.incident.findUnique({
+        where: {
+          id: incidentId,
+        },
+        include: {
+          anomalyEvents: {
+            orderBy: {
+              detectedAt: 'asc',
+            },
+          },
+          rcaReport: true,
+          monitor: {
+            select: {
+              workspaceId: true,
+            },
+          },
+        },
+      })
+
+      if (incident) {
+        const payload = {
+          type: 'RCA_COMPLETED',
+          incident,
+          rcaReport: savedReport,
+        }
+
+        emitMonitorRca(incident.monitorId, payload)
+        emitWorkspaceRca(
+          incident.monitor.workspaceId,
+          payload
+        )
+      }
 
       return {
         incidentId,

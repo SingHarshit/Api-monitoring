@@ -77,6 +77,18 @@ function emitWorkspaceIncident(workspaceId, payload) {
   io.to(`workspace:${workspaceId}`).emit('workspace-incident', payload)
 }
 
+function emitMonitorRca(monitorId, payload) {
+  if (!io) return
+
+  io.to(`monitor:${monitorId}`).emit('rca-completed', payload)
+}
+
+function emitWorkspaceRca(workspaceId, payload) {
+  if (!io) return
+
+  io.to(`workspace:${workspaceId}`).emit('rca-completed', payload)
+}
+
 module.exports = {
   initializeSocket,
   getIO,
@@ -84,4 +96,6 @@ module.exports = {
   emitWorkspaceStatus,
   emitMonitorIncident,
   emitWorkspaceIncident,
+  emitMonitorRca,
+  emitWorkspaceRca,
 }

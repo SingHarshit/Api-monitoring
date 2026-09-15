@@ -125,3 +125,19 @@ class RCAResponse(BaseModel):
     validation: RCAValidation | None
     final_rca: FinalRCA
     errors: list[StrictStr] = Field(default_factory=list)
+
+
+class RCAReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    incident_id: StrictStr = Field(
+        min_length=1,
+        alias="incidentId",
+    )
+    root_cause: StrictStr = Field(min_length=1)
+    confidence: float = Field(ge=0, le=1)
+    evidence: list[StrictStr] = Field(default_factory=list)
+    affected_apis: list[StrictStr] = Field(default_factory=list)
+    recommended_actions: list[StrictStr] = Field(
+        default_factory=list,
+    )

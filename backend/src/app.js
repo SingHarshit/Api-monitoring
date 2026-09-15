@@ -18,6 +18,7 @@ const { dlqWorker, queueEvents, deadLetterQueue } = require('./workers/deadLette
 const aiWorker = require('./queues/aiProcessor')
 const incidentWorker = require('./workers/incidentWorker')
 const rcaWorker = require('./workers/rcaWorker')
+const incidentRoutes = require('./routes/incident.routes')
 const app = express()
 const server = http.createServer(app)
 
@@ -79,11 +80,10 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/monitors', monitorRoutes)
-app.use('/api/monitors', incidentRoutes)
 app.use('/api/workspaces', workspace)
 let io 
 
-const incidentRoutes = require('./routes/incident.routes')
+
 
 app.use('/api/incidents', incidentRoutes)
 

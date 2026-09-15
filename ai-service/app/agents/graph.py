@@ -21,6 +21,7 @@ from app.agents.tools import (
     previous_incidents_tool,
     runbook_search_tool,
 )
+from app.models.rca import RCAReport
 
 
 class HypothesisOutput(BaseModel):
@@ -39,11 +40,11 @@ class ValidationOutput(BaseModel):
 
 
 class RCAOutput(BaseModel):
-    root_cause: str
-    explanation: str
+    incident_id: str = Field(min_length=1)
+    root_cause: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
-    supporting_evidence: list[str] = Field(default_factory=list)
-    alternative_hypotheses: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    affected_apis: list[str] = Field(default_factory=list)
     recommended_actions: list[str] = Field(default_factory=list)
 
 
@@ -349,9 +350,10 @@ def generate_rca(state: RCAState) -> dict[str, Any]:
     """
     Produce the final root-cause analysis from the full investigation state.
     """
-    llm = _get_llm().with_structured_output(RCAOutput)
+    llm = _get_llm().with_structured_output(RCAReport)
 
     prompt = {
+        "incident_id": state.get("incident_id"),
         "incident": state.get("incident", {}),
         "hypotheses": state.get("hypotheses", []),
         "evidence": state.get("evidence", []),
@@ -375,9 +377,13 @@ def generate_rca(state: RCAState) -> dict[str, Any]:
         ]
     )
 
-    return {
-        "final_rca": _model_dict(result),
-    }
+    report = result.model_copy(
+        update={
+            "incident_id": state["incident_id"],
+        }
+    )
+
+    return {"final_rca": report.model_dump()}
 
 
 def build_rca_graph():

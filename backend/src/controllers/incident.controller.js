@@ -94,8 +94,66 @@ async function updateIncident(req, res, next) {
   }
 }
 
+async function enqueueRca(req, res, next) {
+  try {
+    const { monitorId, incidentId } = req.params
+    const { windowHours, maxIterations } = req.body
+
+    const result = await incidentService.enqueueIncidentRca({
+      monitorId,
+      incidentId,
+      userId: getUserId(req),
+      windowHours,
+      maxIterations,
+      requestId: req.headers['x-request-id'],
+    })
+
+    return res.status(202).json({
+      success: true,
+      data: result,
+    })
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      })
+    }
+
+    return handleError(error, next)
+  }
+}
+
+async function getRca(req, res, next) {
+  try {
+    const { monitorId, incidentId } = req.params
+
+    const report = await incidentService.getIncidentRca({
+      monitorId,
+      incidentId,
+      userId: getUserId(req),
+    })
+
+    return res.status(200).json({
+      success: true,
+      data: report,
+    })
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      })
+    }
+
+    return handleError(error, next)
+  }
+}
+
 module.exports = {
   getIncidents,
   getIncident,
   updateIncident,
+  enqueueRca,
+  getRca,
 }

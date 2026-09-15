@@ -1,5 +1,6 @@
 const { Queue } = require('bullmq')
 const redis = require('../config/redis')
+const prisma = require('../config/prisma')
 
 const RCA_QUEUE_NAME = 'rca-investigation-queue'
 
@@ -28,20 +29,10 @@ async function enqueueRca(data) {
     requestId,
   } = data
 
-  if (!incidentId) {
-    throw new Error('incidentId is required')
-  }
-
-  if (!monitorId) {
-    throw new Error('monitorId is required')
-  }
-
-  if (!checkId) {
-    throw new Error('checkId is required')
-  }
-
-  if (!triggeredAt) {
-    throw new Error('triggeredAt is required')
+  if (!incidentId || !monitorId || !checkId || !triggeredAt) {
+    throw new Error(
+      'incidentId, monitorId, checkId, and triggeredAt are required'
+    )
   }
 
   return rcaQueue.add(
@@ -62,8 +53,61 @@ async function enqueueRca(data) {
   )
 }
 
+async function enqueueManualRca({
+  incidentId,
+  windowHours = 1,
+  maxIterations = 3,
+  requestId,
+}) {
+  const incident = await prisma.incident.findUnique({
+    where: {
+      id: incidentId,
+    },
+    include: {
+      anomalyEvents: {
+        orderBy: {
+          detectedAt: 'asc',
+        },
+      },
+    },
+  })
+
+  if (!incident) {
+    throw new Error(`Incident ${incidentId} not found`)
+  }
+
+  const latestEvent = [...incident.anomalyEvents]
+    .reverse()
+    .find((event) => event.checkId)
+
+  if (!latestEvent?.checkId) {
+    throw new Error(
+      `Incident ${incidentId} has no monitor check for RCA`
+    )
+  }
+
+  const initialSignals = incident.anomalyEvents.map((event) => ({
+    type: event.type,
+    severity: event.severity,
+    details: event.details || {},
+    detectedAt: event.detectedAt,
+  }))
+
+  return enqueueRca({
+    incidentId,
+    monitorId: incident.monitorId,
+    checkId: latestEvent.checkId,
+    triggeredAt: incident.lastEventAt || incident.startedAt,
+    windowHours,
+    maxIterations,
+    initialSignals,
+    requestId,
+  })
+}
+
 module.exports = {
   RCA_QUEUE_NAME,
   rcaQueue,
   enqueueRca,
+  enqueueManualRca,
 }

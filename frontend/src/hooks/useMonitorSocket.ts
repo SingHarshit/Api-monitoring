@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { getSocket } from '../sockets/socket'
 import type { Monitor, CheckStatus } from '../types/monitor'
+import type { RcaCompletedEvent } from '../types/rca'
 
 export interface MonitorStatusUpdate {
   monitorId: string
@@ -118,4 +119,34 @@ export function useAllMonitorsSocket(
       socket.off('workspace-status', handleWorkspaceStatus)
     }
   }, [socket, onStatusUpdate])
+}
+
+export function useRcaSocket(
+  monitorId: string | null,
+  workspaceId: string | null,
+  onRcaCompleted: (event: RcaCompletedEvent) => void,
+) {
+  const socket = getSocket()
+
+  useEffect(() => {
+    if (!socket) return
+
+    if (workspaceId) {
+      socket.emit('join-workspace', workspaceId)
+    }
+
+    if (monitorId) {
+      socket.emit('join-monitor', monitorId)
+    }
+
+    const handleRcaCompleted = (event: RcaCompletedEvent) => {
+      onRcaCompleted(event)
+    }
+
+    socket.on('rca-completed', handleRcaCompleted)
+
+    return () => {
+      socket.off('rca-completed', handleRcaCompleted)
+    }
+  }, [monitorId, workspaceId, socket, onRcaCompleted])
 }

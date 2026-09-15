@@ -3,6 +3,7 @@ const {
   emitMonitorIncident,
   emitWorkspaceIncident,
 } = require('../socket/statusGateway')
+const { enqueueManualRca } = require('../queues/rcaQueue')
 
 const INCIDENT_INCLUDE = {
   anomalyEvents: {
@@ -30,11 +31,18 @@ async function findAuthorizedMonitor(monitorId, userId) {
     where: {
       id: monitorId,
       workspace: {
-        members: {
-          some: {
-            userId,
+        OR: [
+          {
+            ownerId: userId,
           },
-        },
+          {
+            members: {
+              some: {
+                userId,
+              },
+            },
+          },
+        ],
       },
     },
     select: {
@@ -163,8 +171,69 @@ async function updateIncidentStatus({
   return incident
 }
 
+async function enqueueIncidentRca({
+  monitorId,
+  incidentId,
+  userId,
+  windowHours,
+  maxIterations,
+  requestId,
+}) {
+  await findAuthorizedMonitor(monitorId, userId)
+
+  const incident = await prisma.incident.findFirst({
+    where: {
+      id: incidentId,
+      monitorId,
+    },
+  })
+
+  if (!incident) {
+    throw createServiceError('Incident not found', 404)
+  }
+
+  const job = await enqueueManualRca({
+    incidentId,
+    windowHours,
+    maxIterations,
+    requestId,
+  })
+
+  return {
+    incidentId,
+    jobId: job.id,
+    status: 'QUEUED',
+  }
+}
+
+async function getIncidentRca({
+  monitorId,
+  incidentId,
+  userId,
+}) {
+  await findAuthorizedMonitor(monitorId, userId)
+
+  const incident = await prisma.incident.findFirst({
+    where: {
+      id: incidentId,
+      monitorId,
+    },
+    include: {
+      rcaReport: true,
+    },
+  })
+
+  if (!incident) {
+    throw createServiceError('Incident not found', 404)
+  }
+
+  return incident.rcaReport
+}
+
 module.exports = {
   listIncidents,
   getIncident,
   updateIncidentStatus,
+  enqueueIncidentRca,
+  getIncidentRca,
 }
